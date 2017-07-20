@@ -20,6 +20,11 @@ byteorder       = "~0.5"
 rust-base58     = "~0.0"
 seek_bufread    = "~1.2"
 
+redis = { git = "https://github.com/mitsuhiko/redis-rs" }
+serde = "1.0.10"
+serde_derive = "1.0.10"
+bincode = "0.8.0"
+
 # The development profile, used for `cargo build`
 [profile.dev]
 opt-level = 0                # Controls the --opt-level the compiler builds with

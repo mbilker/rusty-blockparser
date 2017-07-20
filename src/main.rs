@@ -1,5 +1,9 @@
 //#![feature(hashmap_hasher)] // requires rust-nightly
 
+#![feature(alloc_system)]
+extern crate alloc_system;
+
+
 #[macro_use]
 extern crate log;
 extern crate time;
@@ -11,6 +15,11 @@ extern crate rustc_serialize;
 extern crate byteorder;
 extern crate rust_base58;
 extern crate seek_bufread;
+
+#[macro_use]
+extern crate serde_derive;
+extern crate bincode;
+extern crate redis;
 
 #[macro_use]
 pub mod errors;
@@ -39,7 +48,7 @@ use callbacks::Callback;
 use callbacks::stats::SimpleStats;
 use callbacks::csvdump::CsvDump;
 use callbacks::unspentcsvdump::UnspentCsvDump;
-
+use callbacks::rediscsvdump::RedisCsvDump;
 
 /// Holds all available user arguments
 pub struct ParserOptions {
@@ -225,6 +234,7 @@ fn parse_args() -> OpResult<ParserOptions> {
         .subcommand(UnspentCsvDump::build_subcommand())
         .subcommand(CsvDump::build_subcommand())
         .subcommand(SimpleStats::build_subcommand())
+        .subcommand(RedisCsvDump::build_subcommand())
         .get_matches();
 
     // Set flags
@@ -255,6 +265,8 @@ fn parse_args() -> OpResult<ParserOptions> {
          callback = Box::new(try!(CsvDump::new(matches)));
     } else if let Some(ref matches) = matches.subcommand_matches("unspentcsvdump") {
          callback = Box::new(try!(UnspentCsvDump::new(matches)));
+    } else if let Some(ref matches) = matches.subcommand_matches("rediscsvdump") {
+         callback = Box::new(try!(RedisCsvDump::new(matches)));
     } else {
         clap::Error {
             message: String::from("error: No Callback specified.\nFor more information try --help"),

@@ -8,6 +8,7 @@ use blockchain::proto::script;
 
 use rustc_serialize::json;
 
+use redis;
 
 /// Returns a string with filename, current code line and column
 macro_rules! line_mark {
@@ -76,6 +77,7 @@ pub enum OpErrorKind {
     Utf8Error(string::FromUtf8Error),
     ScriptError(script::ScriptError),
     JsonError(String),
+    RedisError(redis::RedisError),
     InvalidArgsError,
     CallbackError,
     ValidateError,
@@ -92,6 +94,7 @@ impl fmt::Display for OpErrorKind {
             OpErrorKind::Utf8Error(ref err) => write!(f, "Utf8 Conversion Error: {}", err),
             OpErrorKind::ScriptError(ref err) => write!(f, "Script Error: {}", err),
             OpErrorKind::JsonError(ref err) => write!(f, "Json Error: {}", err),
+            OpErrorKind::RedisError(ref err) => write!(f, "Redis Error: {}", err),
             ref err @ OpErrorKind::PoisonError => write!(f, "Threading Error: {}", err),
             ref err @ OpErrorKind::SendError => write!(f, "Sync Error: {}", err),
             OpErrorKind::InvalidArgsError => write!(f, "InvalidArgs Error"),
@@ -114,6 +117,7 @@ impl error::Error for OpErrorKind {
             ref err @ OpErrorKind::PoisonError => err.description(),
             ref err @ OpErrorKind::SendError => err.description(),
             OpErrorKind::JsonError(ref err) => err,
+            OpErrorKind::RedisError(ref err) => err.description(),
             OpErrorKind::InvalidArgsError => "",
             OpErrorKind::CallbackError => "",
             OpErrorKind::ValidateError => "",
@@ -128,6 +132,7 @@ impl error::Error for OpErrorKind {
             OpErrorKind::ByteOrderError(ref err) => Some(err),
             OpErrorKind::Utf8Error(ref err) => Some(err),
             OpErrorKind::ScriptError(ref err) => Some(err),
+            OpErrorKind::RedisError(ref err) => Some(err),
             ref err @ OpErrorKind::PoisonError => Some(err),
             ref err @ OpErrorKind::SendError => Some(err),
             _ => None
@@ -189,6 +194,12 @@ impl convert::From<json::DecoderError> for OpError {
     }
 }
 
+
+impl convert::From<redis::RedisError> for OpError {
+    fn from(err: redis::RedisError) -> OpError {
+        OpError::new(OpErrorKind::RedisError(err))
+    }
+}
 
 #[cfg(test)]
 mod tests {
