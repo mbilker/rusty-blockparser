@@ -82,6 +82,7 @@ pub enum OpErrorKind {
     CallbackError,
     ValidateError,
     RuntimeError,
+    ParseError,
     PoisonError,
     SendError
 }
@@ -97,6 +98,7 @@ impl fmt::Display for OpErrorKind {
             OpErrorKind::RedisError(ref err) => write!(f, "Redis Error: {}", err),
             ref err @ OpErrorKind::PoisonError => write!(f, "Threading Error: {}", err),
             ref err @ OpErrorKind::SendError => write!(f, "Sync Error: {}", err),
+            OpErrorKind::ParseError => write!(f, "Parsing Error"),
             OpErrorKind::InvalidArgsError => write!(f, "InvalidArgs Error"),
             OpErrorKind::CallbackError => write!(f, "Callback Error"),
             OpErrorKind::ValidateError => write!(f, "Validation Error"),
@@ -118,6 +120,7 @@ impl error::Error for OpErrorKind {
             ref err @ OpErrorKind::SendError => err.description(),
             OpErrorKind::JsonError(ref err) => err,
             OpErrorKind::RedisError(ref err) => err.description(),
+            OpErrorKind::ParseError => "",
             OpErrorKind::InvalidArgsError => "",
             OpErrorKind::CallbackError => "",
             OpErrorKind::ValidateError => "",

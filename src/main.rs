@@ -1,9 +1,5 @@
 //#![feature(hashmap_hasher)] // requires rust-nightly
 
-#![feature(alloc_system)]
-extern crate alloc_system;
-
-
 #[macro_use]
 extern crate log;
 extern crate time;
@@ -11,9 +7,10 @@ extern crate crypto;
 #[macro_use]
 extern crate clap;
 extern crate rustc_serialize;
-//extern crate twox_hash; // requires rust-nightly
+extern crate twox_hash;
 extern crate byteorder;
 extern crate rust_base58;
+extern crate csv;
 extern crate seek_bufread;
 
 #[macro_use]
@@ -46,9 +43,11 @@ use common::logger::SimpleLogger;
 use errors::{OpError, OpErrorKind, OpResult};
 use callbacks::Callback;
 use callbacks::stats::SimpleStats;
+use callbacks::clusterizer::Clusterizer;
 use callbacks::csvdump::CsvDump;
 use callbacks::unspentcsvdump::UnspentCsvDump;
 use callbacks::rediscsvdump::RedisCsvDump;
+use callbacks::txoutdump::TxOutDump;
 
 /// Holds all available user arguments
 pub struct ParserOptions {
@@ -106,9 +105,9 @@ fn main() {
         };
 
         // Determine starting location based on previous scans.
-        let start_blk_idx = match parse_mode {
-            ParseMode::Indexing => 0,
-            ParseMode::FullData => chain_file.latest_blk_idx
+        let start_blk_idx = match options.reindex {
+            true => 0,
+            false => chain_file.latest_blk_idx - 1
         };
 
         // Load blk files from blockchain dir
@@ -233,6 +232,8 @@ fn parse_args() -> OpResult<ParserOptions> {
         // Add callbacks
         .subcommand(UnspentCsvDump::build_subcommand())
         .subcommand(CsvDump::build_subcommand())
+        .subcommand(TxOutDump::build_subcommand())
+        .subcommand(Clusterizer::build_subcommand())
         .subcommand(SimpleStats::build_subcommand())
         .subcommand(RedisCsvDump::build_subcommand())
         .get_matches();
@@ -267,6 +268,10 @@ fn parse_args() -> OpResult<ParserOptions> {
          callback = Box::new(try!(UnspentCsvDump::new(matches)));
     } else if let Some(ref matches) = matches.subcommand_matches("rediscsvdump") {
          callback = Box::new(try!(RedisCsvDump::new(matches)));
+    } else if let Some(ref matches) = matches.subcommand_matches("txoutdump") {
+          callback = Box::new(try!(TxOutDump::new(matches)));
+    } else if let Some(ref matches) = matches.subcommand_matches("clusterizer") {
+         callback = Box::new(try!(Clusterizer::new(matches)));
     } else {
         clap::Error {
             message: String::from("error: No Callback specified.\nFor more information try --help"),
