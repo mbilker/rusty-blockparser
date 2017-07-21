@@ -156,8 +156,8 @@ impl<'a> BlockchainParser<'a> {
                                      self.stats.n_valid_blocks, blocks_sec);
                             }
                             ParseMode::FullData => {
-                                info!(target:"dispatch", "Status: {:6} Blocks processed. (left: {:6}, avg: {:5.2} blocks/sec)",
-                                     self.stats.n_valid_blocks, self.chain_storage.remaining(), blocks_sec);
+                                info!(target:"dispatch", "Status: {:6} Blocks processed. (left: {:6}, avg: {:5.2} blocks/sec, unsorted_blocks: {})",
+                                     self.stats.n_valid_blocks, self.chain_storage.remaining(), blocks_sec, self.unsorted_blocks.len());
                             }
                         }
                         t_last_log = now;
