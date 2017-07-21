@@ -22,7 +22,8 @@ rust-base58     = ">=0.0"
 seek_bufread    = ">=1.2"
 twox-hash       = ">=1.0.1"
 
-redis = { git = "https://github.com/mitsuhiko/redis-rs" }
+#redis = { git = "https://github.com/mitsuhiko/redis-rs" }
+redis = { path = "../src/redis-rs" }
 serde = "1.0.10"
 serde_derive = "1.0.10"
 bincode = "0.8.0"
