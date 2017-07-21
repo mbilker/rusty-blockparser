@@ -32,7 +32,7 @@ pub struct RedisCsvDump {
     out_count:      u64
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct RedisHashMapVal {
 /*	txid:	String,
 	index:	usize,*/
@@ -40,42 +40,6 @@ struct RedisHashMapVal {
 	output_val:	u64,
 	address:	String
 }
-
-/*
-macro_rules! fail {
-  ($expr:expr) => (
-    return Err(::std::convert::From::from($expr));
-  )
-}
-
-macro_rules! invalid_type_error {
-  ($v:expr, $det:expr) => ({
-    fail!((redis::ErrorKind::TypeError,
-      "Response was of incompatible type",
-      format!("{:?} (response was {:?})", $det, $v)));
-  })
-}
-
-impl ToRedisArgs for RedisHashMapVal {
-  fn to_redis_args(&self) -> Vec<Vec<u8>> {
-    vec![serialize(self, Infinite).unwrap()]
-  }
-}
-
-impl FromRedisValue for RedisHashMapVal {
-  fn from_redis_value(v: &Value) -> RedisResult<RedisHashMapVal> {
-    let rv = match *v {
-      Value::Data(ref b) => deserialize(b),
-      Value::Status(ref s) => deserialize(s.as_bytes()),
-      _ => invalid_type_error!(v, "Not Bincode compatible"),
-    };
-    match rv {
-      Ok(value) => Ok(value),
-      Err(_) => invalid_type_error!(v, "Not valid Bincode"),
-    }
-  }
-}
-*/
 
 impl RedisCsvDump {
     fn create_writer(cap: usize, path: PathBuf) -> OpResult<BufWriter<File>> {
@@ -103,13 +67,13 @@ impl Callback for RedisCsvDump {
     fn new(matches: &ArgMatches) -> OpResult<Self> where Self: Sized {
         let ref dump_folder = PathBuf::from(matches.value_of("dump-folder").unwrap()); // Save to unwrap
         match (|| -> OpResult<Self> {
-            let redis_client = try!(redis::Client::open("redis://localhost:6379"));
+            let redis_client = try!(redis::Client::open("redis://luna.lab.mbilker.us:6379"));
             let redis_connection = try!(redis_client.get_connection());
             let info: redis::InfoDict = try!(redis::cmd("INFO").query(&redis_connection));
             if let Some(version) = info.get("redis_version") as Option<String> {
-              info!(target: "callback", "Connected to Redis v{} at redis://localhost:6379", version);
+              info!(target: "callback", "Connected to Redis v{} at redis://luna.lab.mbilker.us:6379", version);
             } else {
-              info!(target: "callback", "Connected to Redis with unknown version at redis://localhost:6379");
+              info!(target: "callback", "Connected to Redis with unknown version at redis://luna.lab.mbilker.us:6379");
             }
 
             let cap = 4000000;
@@ -150,17 +114,17 @@ impl Callback for RedisCsvDump {
 
             for input in &tx.value.inputs {
 		let input_outpoint_txid_idx = utils::arr_to_hex_swapped(&input.outpoint.txid) + &input.outpoint.index.to_string();
-                let val: bool = match self.redis_connection.hexists("bitcoin_unspent", &input_outpoint_txid_idx) {
-                    Ok(v) => v,
-                    Err(err) => panic!("Error checking key {} {:?}", input_outpoint_txid_idx, err),
-                };
+                //let val: bool = match self.redis_connection.hexists("bitcoin_unspent", &input_outpoint_txid_idx) {
+                //    Ok(v) => v,
+                //    Err(err) => panic!("Error checking key {} {:?}", input_outpoint_txid_idx, err),
+                //};
 
-                if val {
-                  match self.redis_connection.hdel::<_,_,i32>("bitcoin_unspent", &input_outpoint_txid_idx) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Error deleting hash entry {} {:?}", input_outpoint_txid_idx, err),
-                  };
-		};
+                //if val {
+                match self.redis_connection.hdel::<_,_,i32>("bitcoin_unspent", &input_outpoint_txid_idx) {
+                  Ok(_) => (),
+                  Err(err) => panic!("Error deleting hash entry {} {:?}", input_outpoint_txid_idx, err),
+                };
+		//};
             }
             self.in_count += tx.value.in_count.value;
 
