@@ -107,7 +107,7 @@ fn main() {
         // Determine starting location based on previous scans.
         let start_blk_idx = match options.reindex {
             true => 0,
-            false => chain_file.latest_blk_idx - 1
+            false => chain_file.latest_blk_idx
         };
 
         // Load blk files from blockchain dir
