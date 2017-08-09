@@ -1,3 +1,4 @@
+use std;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::io::{BufWriter, Write};
@@ -13,7 +14,8 @@ use blockchain::proto::block::Block;
 use blockchain::utils;
 
 //use redis::{self, Commands, ToRedisArgs, FromRedisValue, RedisResult, Value};
-use redis::{self, Commands};
+//use redis::{self, Commands};
+use redis;
 
 use bincode::{serialize, deserialize, Infinite};
 
@@ -67,7 +69,10 @@ impl Callback for RedisCsvDump {
     fn new(matches: &ArgMatches) -> OpResult<Self> where Self: Sized {
         let ref dump_folder = PathBuf::from(matches.value_of("dump-folder").unwrap()); // Save to unwrap
         match (|| -> OpResult<Self> {
-            let redis_client = try!(redis::Client::open("redis://luna.lab.mbilker.us:6379"));
+            let host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "localhost".to_owned());
+            let port = std::env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_owned());
+            let url = format!("redis://{}:{}", host, port);
+            let redis_client = try!(redis::Client::open(url.as_str()));
             let redis_connection = try!(redis_client.get_connection());
             let info: redis::InfoDict = try!(redis::cmd("INFO").query(&redis_connection));
             if let Some(version) = info.get("redis_version") as Option<String> {
@@ -120,10 +125,7 @@ impl Callback for RedisCsvDump {
                 //};
 
                 //if val {
-                match self.redis_connection.hdel::<_,_,i32>("bitcoin_unspent", &input_outpoint_txid_idx) {
-                  Ok(_) => (),
-                  Err(err) => panic!("Error deleting hash entry {} {:?}", input_outpoint_txid_idx, err),
-                };
+                redis::cmd("HDEL").arg("bitcoin_unspent").arg(&input_outpoint_txid_idx).execute(&self.redis_connection);
 		//};
             }
             self.in_count += tx.value.in_count.value;
@@ -138,10 +140,7 @@ impl Callback for RedisCsvDump {
 		};
                 let key = txid_str.clone() + &i.to_string();
                 let encoded: Vec<u8> = serialize(&hash_val, Infinite).unwrap();
-                match self.redis_connection.hset::<_,_,_,i32>("bitcoin_unspent", &key, encoded) {
-                  Ok(_) => (),
-                  Err(err) => panic!("Error setting hash entry {} = {:?} (err: {:?})", key, hash_val, err),
-                };
+                //redis::cmd("HSET").arg("bitcoin_unspent").arg(key).arg(&encoded[..]).execute(&self.redis_connection);
             }
             self.out_count += tx.value.out_count.value;
         }
