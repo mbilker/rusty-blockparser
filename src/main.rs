@@ -16,7 +16,7 @@ extern crate seek_bufread;
 #[macro_use]
 extern crate serde_derive;
 extern crate bincode;
-extern crate redis;
+extern crate postgres;
 
 #[macro_use]
 pub mod errors;
@@ -46,7 +46,7 @@ use callbacks::stats::SimpleStats;
 use callbacks::clusterizer::Clusterizer;
 use callbacks::csvdump::CsvDump;
 use callbacks::unspentcsvdump::UnspentCsvDump;
-use callbacks::rediscsvdump::RedisCsvDump;
+use callbacks::dbcsvdump::DbCsvDump;
 use callbacks::txoutdump::TxOutDump;
 
 /// Holds all available user arguments
@@ -235,7 +235,7 @@ fn parse_args() -> OpResult<ParserOptions> {
         .subcommand(TxOutDump::build_subcommand())
         .subcommand(Clusterizer::build_subcommand())
         .subcommand(SimpleStats::build_subcommand())
-        .subcommand(RedisCsvDump::build_subcommand())
+        .subcommand(DbCsvDump::build_subcommand())
         .get_matches();
 
     // Set flags
@@ -266,8 +266,8 @@ fn parse_args() -> OpResult<ParserOptions> {
          callback = Box::new(try!(CsvDump::new(matches)));
     } else if let Some(ref matches) = matches.subcommand_matches("unspentcsvdump") {
          callback = Box::new(try!(UnspentCsvDump::new(matches)));
-    } else if let Some(ref matches) = matches.subcommand_matches("rediscsvdump") {
-         callback = Box::new(try!(RedisCsvDump::new(matches)));
+    } else if let Some(ref matches) = matches.subcommand_matches("dbcsvdump") {
+         callback = Box::new(try!(DbCsvDump::new(matches)));
     } else if let Some(ref matches) = matches.subcommand_matches("txoutdump") {
           callback = Box::new(try!(TxOutDump::new(matches)));
     } else if let Some(ref matches) = matches.subcommand_matches("clusterizer") {

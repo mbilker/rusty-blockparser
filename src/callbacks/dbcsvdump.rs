@@ -13,19 +13,17 @@ use blockchain::parser::types::CoinType;
 use blockchain::proto::block::Block;
 use blockchain::utils;
 
-//use redis::{self, Commands, ToRedisArgs, FromRedisValue, RedisResult, Value};
-//use redis::{self, Commands};
-use redis;
+use postgres::{Connection, TlsMode};
 
 use bincode::{serialize, deserialize, Infinite};
 
 /// Dumps the whole blockchain into csv files
-pub struct RedisCsvDump {
+pub struct DbCsvDump {
     // Each structure gets stored in a seperate csv file
     dump_folder:    PathBuf,
     unspent_writer: BufWriter<File>,
 
-    redis_connection: redis::Connection,
+    postgres_connection: Connection,
 
     start_height:   usize,
     end_height:     usize,
@@ -35,7 +33,7 @@ pub struct RedisCsvDump {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct RedisHashMapVal {
+struct DbHashMapVal {
 /*	txid:	String,
 	index:	usize,*/
 	block_height:	usize,
@@ -43,7 +41,7 @@ struct RedisHashMapVal {
 	address:	String
 }
 
-impl RedisCsvDump {
+impl DbCsvDump {
     fn create_writer(cap: usize, path: PathBuf) -> OpResult<BufWriter<File>> {
         let file = match File::create(&path) {
             Ok(f) => f,
@@ -53,11 +51,11 @@ impl RedisCsvDump {
     }
 }
 
-impl Callback for RedisCsvDump {
+impl Callback for DbCsvDump {
 
     fn build_subcommand<'a, 'b>() -> App<'a, 'b> where Self: Sized {
-        SubCommand::with_name("rediscsvdump")
-            .about("Dumps the unspent outputs to CSV file using Redis")
+        SubCommand::with_name("dbcsvdump")
+            .about("Dumps the unspent outputs to CSV file using a database for the state tracking")
             .version("0.1")
             .author("mbilker <me@mbilker.us>")
             .arg(Arg::with_name("dump-folder")
@@ -69,23 +67,18 @@ impl Callback for RedisCsvDump {
     fn new(matches: &ArgMatches) -> OpResult<Self> where Self: Sized {
         let ref dump_folder = PathBuf::from(matches.value_of("dump-folder").unwrap()); // Save to unwrap
         match (|| -> OpResult<Self> {
-            let host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "localhost".to_owned());
-            let port = std::env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_owned());
-            let url = format!("redis://{}:{}", host, port);
-            let redis_client = try!(redis::Client::open(url.as_str()));
-            let redis_connection = try!(redis_client.get_connection());
-            let info: redis::InfoDict = try!(redis::cmd("INFO").query(&redis_connection));
-            if let Some(version) = info.get("redis_version") as Option<String> {
-              info!(target: "callback", "Connected to Redis v{} at redis://luna.lab.mbilker.us:6379", version);
-            } else {
-              info!(target: "callback", "Connected to Redis with unknown version at redis://luna.lab.mbilker.us:6379");
-            }
+            let user = std::env::var("POSTGRES_USER").unwrap_or_else(|_| "postgres".to_owned());
+            let host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_owned());
+            let database = std::env::var("POSTGRES_DB").unwrap_or_else(|_| "rusty_blockchain".to_owned());
+            let url = format!("postgres://{}@{}/{}", user, host, database);
+            let postgres_connection = try!(Connection::connect(url.clone(), TlsMode::None));
+            info!(target: "callback", "Connected to PostgreSQL at {}", url);
 
             let cap = 4000000;
-            let cb = RedisCsvDump {
+            let cb = DbCsvDump {
                 dump_folder: PathBuf::from(dump_folder),
-                unspent_writer: try!(RedisCsvDump::create_writer(cap, dump_folder.join("unspent.csv.tmp"))),
-                redis_connection: redis_connection,
+                unspent_writer: try!(DbCsvDump::create_writer(cap, dump_folder.join("unspent.csv.tmp"))),
+                postgres_connection: postgres_connection,
                 start_height: 0, end_height: 0, tx_count: 0, in_count: 0, out_count: 0
             };
             Ok(cb)
@@ -100,10 +93,13 @@ impl Callback for RedisCsvDump {
 
     fn on_start(&mut self, _: CoinType, block_height: usize) {
         self.start_height = block_height;
-        info!(target: "callback", "Using `rediscsvdump` with dump folder: {} ...", &self.dump_folder.display());
+        info!(target: "callback", "Using `dbcsvdump` with dump folder: {} ...", &self.dump_folder.display());
     }
 
     fn on_block(&mut self, block: Block, block_height: usize) {
+        let delete_statement = self.postgres_connection.prepare("DELETE FROM results WHERE key = $1").unwrap();
+        let insert_statement = self.postgres_connection.prepare("INSERT INTO results (key, encoded) VALUES ($1, $2)").unwrap();
+
         // serialize transaction
         for tx in block.txs {
 	    // For each transaction in the block,
@@ -119,20 +115,23 @@ impl Callback for RedisCsvDump {
 
             for input in &tx.value.inputs {
 		let input_outpoint_txid_idx = utils::arr_to_hex_swapped(&input.outpoint.txid) + &input.outpoint.index.to_string();
-                //let val: bool = match self.redis_connection.hexists("bitcoin_unspent", &input_outpoint_txid_idx) {
-                //    Ok(v) => v,
-                //    Err(err) => panic!("Error checking key {} {:?}", input_outpoint_txid_idx, err),
-                //};
+                let val: bool = match self.postgres_connection.query("SELECT EXISTS(SELECT 1 FROM results WHERE key = $1) AS \"exists\"", &[&input_outpoint_txid_idx]) {
+                    Ok(rows) => {
+                      let row = rows.get(0);
+                      row.get("exists")
+                    },
+                    Err(err) => panic!("Error checking key {} {:?}", input_outpoint_txid_idx, err),
+                };
 
-                //if val {
-                redis::cmd("HDEL").arg("bitcoin_unspent").arg(&input_outpoint_txid_idx).execute(&self.redis_connection);
-		//};
+                if val {
+                  delete_statement.execute(&[&input_outpoint_txid_idx]).unwrap();
+                }
             }
             self.in_count += tx.value.in_count.value;
 
             // serialize outputs
             for (i, output) in tx.value.outputs.iter().enumerate() {
-		let hash_val: RedisHashMapVal = RedisHashMapVal {
+		let hash_val: DbHashMapVal = DbHashMapVal {
 			block_height: block_height,
 			output_val: output.out.value,
 			address: output.script.address.clone(),
@@ -140,7 +139,7 @@ impl Callback for RedisCsvDump {
 		};
                 let key = txid_str.clone() + &i.to_string();
                 let encoded: Vec<u8> = serialize(&hash_val, Infinite).unwrap();
-                //redis::cmd("HSET").arg("bitcoin_unspent").arg(key).arg(&encoded[..]).execute(&self.redis_connection);
+                insert_statement.execute(&[&key, &encoded]).unwrap();
             }
             self.out_count += tx.value.out_count.value;
         }
@@ -159,9 +158,12 @@ impl Callback for RedisCsvDump {
 		"address"
 		).as_bytes()
 	).unwrap();
-        let iter: redis::Iter<(String, Vec<u8>)> = redis::cmd("HSCAN").arg("bitcoin_unspent").cursor_arg(0).iter(&self.redis_connection).unwrap();
-        for (key, encoded) in iter {
-                let value: RedisHashMapVal = deserialize(&encoded).unwrap();
+        let query = self.postgres_connection.query("SELECT key, encoded FROM results", &[]);
+        let iter = query.iter().map(|row| row.get(0));
+        for row in iter {
+                let key: String = row.get(0);
+                let encoded: Vec<u8> = row.get(1);
+                let value: DbHashMapVal = deserialize(&encoded).unwrap();
 		let txid = &key[0..63];
 		let index = &key[64..key.len()-1];
 		//let  = key.len();

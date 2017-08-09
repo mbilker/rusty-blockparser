@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS results;
+
+CREATE TABLE results (
+ id	SERIAL PRIMARY KEY	NOT NULL,
+ key		TEXT	NOT NULL,
+ encoded	BYTEA	NOT NULL
+);
