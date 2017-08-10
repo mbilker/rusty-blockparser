@@ -1,4 +1,5 @@
 use std;
+use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::io::{BufWriter, Write};
@@ -97,8 +98,10 @@ impl Callback for DbCsvDump {
     }
 
     fn on_block(&mut self, block: Block, block_height: usize) {
-        let delete_statement = self.postgres_connection.prepare("DELETE FROM results WHERE key = $1").unwrap();
-        let insert_statement = self.postgres_connection.prepare("INSERT INTO results (key, encoded) VALUES ($1, $2)").unwrap();
+        let trans = self.postgres_connection.transaction().unwrap();
+        //let check_statement = trans.prepare("SELECT EXISTS(SELECT 1 FROM results WHERE key = $1) AS \"exists\"").unwrap();
+        //let delete_statement = trans.prepare("DELETE FROM results WHERE key = $1").unwrap();
+        let insert_statement = trans.prepare("INSERT INTO results (key, encoded) VALUES ($1, $2)").unwrap();
 
         // serialize transaction
         for tx in block.txs {
@@ -113,9 +116,17 @@ impl Callback for DbCsvDump {
             //self.tx_writer.write_all(tx.as_csv(&block_hash).as_bytes()).unwrap();
             let txid_str = utils::arr_to_hex_swapped(&tx.hash);
 
+            let mut batch_delete_statement = String::new();
+            write!(&mut batch_delete_statement, "DELETE FROM results WHERE key IN (").unwrap();
+
+            let mut i = 0;
             for input in &tx.value.inputs {
 		let input_outpoint_txid_idx = utils::arr_to_hex_swapped(&input.outpoint.txid) + &input.outpoint.index.to_string();
-                let val: bool = match self.postgres_connection.query("SELECT EXISTS(SELECT 1 FROM results WHERE key = $1) AS \"exists\"", &[&input_outpoint_txid_idx]) {
+/*
+                //let mut txid = String::new();
+                //for &byte in &input.outpoint.txid { write!(&mut txid, "{:x}", byte).unwrap(); }
+                //println!("height: {}, txid: {}, idx: {}, input_outpoint_txid_idx: {}", block_height, txid, input.outpoint.index, input_outpoint_txid_idx);
+                let val: bool = match check_statement.query(&[&input_outpoint_txid_idx]) {
                     Ok(rows) => {
                       let row = rows.get(0);
                       row.get("exists")
@@ -124,9 +135,27 @@ impl Callback for DbCsvDump {
                 };
 
                 if val {
+                  //let mut txid = String::new();
+                  //for &byte in &input.outpoint.txid { write!(&mut txid, "{:x}", byte).unwrap(); }
+                  //println!("height: {}, txid: {}, idx: {}, input_outpoint_txid_idx: {}", block_height, txid, input.outpoint.index, input_outpoint_txid_idx);
                   delete_statement.execute(&[&input_outpoint_txid_idx]).unwrap();
                 }
+*/
+                if i > 0 {
+                  write!(&mut batch_delete_statement, ", '{}'", input_outpoint_txid_idx).unwrap();
+                } else {
+                  write!(&mut batch_delete_statement, "'{}'", input_outpoint_txid_idx).unwrap();
+                }
+                i = i + 1;
             }
+/*
+            let id_delete: Vec<&String> = tx.value.inputs.iter().map(|input| &(utils::arr_to_hex_swapped(&input.outpoint.txid) + &input.outpoint.index.to_string())).collect();
+            let id_delete_slice = id_delete.as_slice();
+            delete_statement.execute(id_delete_slice);
+*/
+            write!(&mut batch_delete_statement, ");").unwrap();
+            trans.execute(&batch_delete_statement, &[]).unwrap();
+
             self.in_count += tx.value.in_count.value;
 
             // serialize outputs
@@ -138,12 +167,15 @@ impl Callback for DbCsvDump {
 			//script_pubkey: utils::arr_to_hex(&output.out.script_pubkey)
 		};
                 let key = txid_str.clone() + &i.to_string();
+                //println!("txid: {}, idx: {}", txid_str, i);
                 let encoded: Vec<u8> = serialize(&hash_val, Infinite).unwrap();
                 insert_statement.execute(&[&key, &encoded]).unwrap();
             }
             self.out_count += tx.value.out_count.value;
         }
         self.tx_count += block.tx_count.value;
+
+        trans.commit().is_ok();
     }
 
     fn on_complete(&mut self, block_height: usize) {
