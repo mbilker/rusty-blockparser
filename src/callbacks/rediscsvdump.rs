@@ -140,7 +140,7 @@ impl Callback for RedisCsvDump {
 		};
                 let key = txid_str.clone() + &i.to_string();
                 let encoded: Vec<u8> = serialize(&hash_val, Infinite).unwrap();
-                //redis::cmd("HSET").arg("bitcoin_unspent").arg(key).arg(&encoded[..]).execute(&self.redis_connection);
+                redis::cmd("HSET").arg("bitcoin_unspent").arg(key).arg(&encoded[..]).execute(&self.redis_connection);
             }
             self.out_count += tx.value.out_count.value;
         }
